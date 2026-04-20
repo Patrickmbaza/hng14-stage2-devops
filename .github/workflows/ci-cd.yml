@@ -156,7 +156,7 @@ jobs:
           docker load -i frontend-images.tar
 
       - name: Security scan API image
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.API_IMAGE }}
           format: sarif
@@ -165,7 +165,7 @@ jobs:
           exit-code: "1"
 
       - name: Security scan worker image
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.WORKER_IMAGE }}
           format: sarif
@@ -174,7 +174,7 @@ jobs:
           exit-code: "1"
 
       - name: Security scan frontend image
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}
           format: sarif
