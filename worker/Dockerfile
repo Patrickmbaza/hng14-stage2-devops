@@ -19,7 +19,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN addgroup -S appgroup \
+RUN apk upgrade --no-cache \
+    && addgroup -S appgroup \
     && adduser -S appuser -G appgroup -h /home/appuser
 
 WORKDIR /app
