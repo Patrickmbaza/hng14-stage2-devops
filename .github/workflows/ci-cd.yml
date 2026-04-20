@@ -11,6 +11,7 @@ env:
   REDIS_HOST: redis
   REDIS_PORT: "6379"
   REDIS_DB: "0"
+  REDIS_PASSWORD: changeme
   JOB_QUEUE_NAME: jobs:queue
   JOB_STATUS_PREFIX: job
   API_HOST: 0.0.0.0
@@ -39,8 +40,6 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    env:
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,7 +70,7 @@ jobs:
 
       - name: Lint JavaScript
         working-directory: frontend
-        run: npx eslint app.js
+        run: npm run lint
 
       - name: Lint Dockerfiles
         run: |
@@ -82,8 +81,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: lint
-    env:
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -110,8 +107,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: test
-    env:
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     services:
       registry:
         image: registry:2
@@ -121,53 +116,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push API image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: api/Dockerfile
-          push: true
-          tags: |
-            ${{ env.API_IMAGE }}
-            ${{ env.IMAGE_REGISTRY }}/hng-stage2-api:latest
-          cache-from: type=gha,scope=api-image
-          cache-to: type=gha,mode=max,scope=api-image
-
-      - name: Build and push worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: worker/Dockerfile
-          push: true
-          tags: |
-            ${{ env.WORKER_IMAGE }}
-            ${{ env.IMAGE_REGISTRY }}/hng-stage2-worker:latest
-          cache-from: type=gha,scope=worker-image
-          cache-to: type=gha,mode=max,scope=worker-image
-
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: frontend/Dockerfile
-          push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE }}
-            ${{ env.IMAGE_REGISTRY }}/hng-stage2-frontend:latest
-          cache-from: type=gha,scope=frontend-image
-          cache-to: type=gha,mode=max,scope=frontend-image
-
-      - name: Save built images
+      - name: Build and push images
         run: |
-          docker pull "${API_IMAGE}"
-          docker pull "${IMAGE_REGISTRY}/hng-stage2-api:latest"
-          docker pull "${WORKER_IMAGE}"
-          docker pull "${IMAGE_REGISTRY}/hng-stage2-worker:latest"
-          docker pull "${FRONTEND_IMAGE}"
-          docker pull "${IMAGE_REGISTRY}/hng-stage2-frontend:latest"
+          docker build -f api/Dockerfile -t "${API_IMAGE}" -t "${IMAGE_REGISTRY}/hng-stage2-api:latest" .
+          docker build -f worker/Dockerfile -t "${WORKER_IMAGE}" -t "${IMAGE_REGISTRY}/hng-stage2-worker:latest" .
+          docker build -f frontend/Dockerfile -t "${FRONTEND_IMAGE}" -t "${IMAGE_REGISTRY}/hng-stage2-frontend:latest" .
+          docker push "${API_IMAGE}"
+          docker push "${IMAGE_REGISTRY}/hng-stage2-api:latest"
+          docker push "${WORKER_IMAGE}"
+          docker push "${IMAGE_REGISTRY}/hng-stage2-worker:latest"
+          docker push "${FRONTEND_IMAGE}"
+          docker push "${IMAGE_REGISTRY}/hng-stage2-frontend:latest"
           docker save "${API_IMAGE}" "${IMAGE_REGISTRY}/hng-stage2-api:latest" -o api-images.tar
           docker save "${WORKER_IMAGE}" "${IMAGE_REGISTRY}/hng-stage2-worker:latest" -o worker-images.tar
           docker save "${FRONTEND_IMAGE}" "${IMAGE_REGISTRY}/hng-stage2-frontend:latest" -o frontend-images.tar
@@ -184,8 +143,6 @@ jobs:
   security_scan:
     runs-on: ubuntu-latest
     needs: build
-    env:
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Download built image archives
         uses: actions/download-artifact@v4
@@ -299,8 +256,6 @@ jobs:
   integration_test:
     runs-on: ubuntu-latest
     needs: security_scan
-    env:
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -317,30 +272,15 @@ jobs:
           docker load -i frontend-images.tar
 
       - name: Prepare integration environment
-        run: |
-          cp .env.example .env
-          if [[ -n "${REDIS_PASSWORD:-}" ]]; then
-            sed -i "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=${REDIS_PASSWORD}/" .env
-          fi
-
-      - name: Start integration stack
-        run: docker compose up -d --no-build
+        run: cp .env.example .env
 
       - name: Run integration test
-        env:
-          INTEGRATION_MANAGE_COMPOSE: "0"
-        run: timeout 120 bash tests/integration.sh
-
-      - name: Tear down integration stack
-        if: always()
-        run: docker compose down -v --remove-orphans
+        run: bash scripts/integration-test.sh
 
   deploy:
     runs-on: ubuntu-latest
     needs: integration_test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    env:
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -357,11 +297,7 @@ jobs:
           docker load -i frontend-images.tar
 
       - name: Prepare deploy environment
-        run: |
-          cp .env.example .env
-          if [[ -n "${REDIS_PASSWORD:-}" ]]; then
-            sed -i "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=${REDIS_PASSWORD}/" .env
-          fi
+        run: cp .env.example .env
 
       - name: Run scripted rolling deploy
         run: |

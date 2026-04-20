@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-manage_compose="${INTEGRATION_MANAGE_COMPOSE:-1}"
-
-if [[ "${manage_compose}" == "1" ]]; then
-  trap 'docker compose down -v --remove-orphans' EXIT
-fi
+trap 'docker compose down -v --remove-orphans' EXIT
 
 network_name="${COMPOSE_NETWORK_NAME:-hng-stage2-network}"
 
@@ -17,9 +13,7 @@ if docker network inspect "${network_name}" >/dev/null 2>&1; then
   fi
 fi
 
-if [[ "${manage_compose}" == "1" ]]; then
-  docker compose up -d --no-build
-fi
+docker compose up -d --no-build
 
 frontend_container_id="$(docker compose ps -q frontend)"
 frontend_is_healthy=0
