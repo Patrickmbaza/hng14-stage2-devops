@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine as builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ COPY frontend ./
 
 RUN npm prune --omit=dev
 
-FROM node:20-alpine
+FROM node:20-alpine as runtime
 
 ENV NODE_ENV=production
 
