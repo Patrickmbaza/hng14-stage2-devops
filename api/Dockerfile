@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.12-alpine AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -13,14 +13,14 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
     && /opt/venv/bin/pip install -r requirements.txt
 
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN groupadd --system appgroup \
-    && useradd --system --gid appgroup --create-home --home-dir /home/appuser appuser
+RUN addgroup -S appgroup \
+    && adduser -S appuser -G appgroup -h /home/appuser
 
 WORKDIR /app
 

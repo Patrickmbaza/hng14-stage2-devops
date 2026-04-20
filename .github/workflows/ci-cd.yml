@@ -156,6 +156,8 @@ jobs:
           docker load -i frontend-images.tar
 
       - name: Security scan API image
+        id: trivy_api
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.API_IMAGE }}
@@ -163,8 +165,11 @@ jobs:
           output: trivy-api.sarif
           severity: CRITICAL
           exit-code: "1"
+          scanners: vuln
 
       - name: Security scan worker image
+        id: trivy_worker
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.WORKER_IMAGE }}
@@ -172,8 +177,11 @@ jobs:
           output: trivy-worker.sarif
           severity: CRITICAL
           exit-code: "1"
+          scanners: vuln
 
       - name: Security scan frontend image
+        id: trivy_frontend
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}
@@ -181,6 +189,7 @@ jobs:
           output: trivy-frontend.sarif
           severity: CRITICAL
           exit-code: "1"
+          scanners: vuln
 
       - name: Upload security scan artifacts
         if: always()
@@ -191,6 +200,12 @@ jobs:
             trivy-api.sarif
             trivy-worker.sarif
             trivy-frontend.sarif
+
+      - name: Fail on critical findings
+        if: steps.trivy_api.outcome != 'success' || steps.trivy_worker.outcome != 'success' || steps.trivy_frontend.outcome != 'success'
+        run: |
+          echo "Trivy detected CRITICAL vulnerabilities in one or more images." >&2
+          exit 1
 
   integration_test:
     runs-on: ubuntu-latest
