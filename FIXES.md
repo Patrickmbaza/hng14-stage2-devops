@@ -123,3 +123,31 @@
 30. `scripts/integration-test.sh:1-63`
     Problem: The integration test could continue after an unhealthy frontend startup or an empty submission response, producing misleading failures later in the script.
     Fix: Added explicit checks for frontend health and for a valid returned `job_id` before polling status.
+
+31. `pytest.ini:1-2`
+    Problem: GitHub Actions test collection could not import `api.main` because the repository root was not guaranteed to be on Python's import path.
+    Fix: Added `pythonpath = .` so pytest resolves the local `api` package consistently in CI.
+
+32. `.github/workflows/ci-cd.yml:158-198`
+    Problem: The workflow referenced `aquasecurity/trivy-action@0.30.0`, which GitHub could not resolve.
+    Fix: Updated the scan steps to a valid `v`-prefixed Trivy action release.
+
+33. `.github/workflows/ci-cd.yml:158-234`
+    Problem: When Trivy failed, the workflow stopped with only a generic final error line, making it hard to identify the exact vulnerable packages from the Actions UI.
+    Fix: Kept the failing gate but added always-uploaded plain-text Trivy reports alongside SARIF artifacts.
+
+34. `api/Dockerfile:1-39`
+    Problem: The API runtime image still contained `pip`, which Trivy reported even though package-install tooling is not needed in production containers.
+    Fix: Removed `pip` from both the build venv after dependency installation and from the final runtime image.
+
+35. `worker/Dockerfile:1-38`
+    Problem: The worker runtime image also shipped with `pip`, creating unnecessary scan surface and unused package-management tooling in production.
+    Fix: Removed `pip` from both the build venv after dependency installation and from the final runtime image.
+
+36. `frontend/Dockerfile:1-27`
+    Problem: The frontend runtime image still included bundled `npm` and `npx`, and Trivy findings were coming from that package-manager dependency tree rather than the application itself.
+    Fix: Removed `npm`, `npx`, and the bundled `npm` directory from the final runtime image.
+
+37. `api/Dockerfile:16-25`, `worker/Dockerfile:16-24`, `frontend/Dockerfile:13-17`
+    Problem: Base-image packages could remain behind the latest Alpine security patches at build time, causing avoidable image-scan findings.
+    Fix: Added `apk upgrade --no-cache` in the final runtime stages to bring Alpine packages up to date during image build.

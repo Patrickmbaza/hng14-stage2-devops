@@ -157,10 +157,18 @@ Pipeline details:
 - Coverage is uploaded as an artifact
 - Images are tagged with both `${{ github.sha }}` and `latest`
 - Images are pushed to a local registry service container inside the workflow job
+- Trivy runs with the current `aquasecurity/trivy-action` `v`-prefixed release tag
 - Trivy fails the pipeline on any `CRITICAL` vulnerability
-- SARIF outputs are uploaded as artifacts
+- Both SARIF and plain-text Trivy reports are uploaded as artifacts so findings can be inspected easily
 - Integration testing brings the stack up, submits a job through the frontend, polls until completion, and tears the stack down cleanly
 - Deployment is scripted and health-gated
+
+Image hardening details:
+
+- The Python images use Alpine-based runtime stages
+- The final Python runtime images remove `pip` after dependency installation because it is not needed at runtime
+- The final frontend runtime image removes `npm` and `npx` because they are not needed at runtime
+- Alpine packages are upgraded during image build to reduce inherited base-image vulnerabilities
 
 ## Deploy With GitHub Actions
 
@@ -174,7 +182,9 @@ To use it in your fork:
 4. Merge or push to `main` to trigger the `deploy` job after every earlier stage passes.
 5. Open the Actions tab and inspect the `ci-cd` workflow run. The deploy job should show the scripted rolling deployment step succeeding only after the new containers pass health checks.
 
-Because the deploy stage is scripted in [scripts/deploy.sh](/mnt/c/Users/patri/Desktop/HNG/stage-zero/hng14-stage2-devops/scripts/deploy.sh), any push to `main` re-validates the rolling update logic automatically.
+Because the deploy stage is scripted in `scripts/deploy.sh`, any push to `main` re-validates the rolling update logic automatically.
+
+If the `security_scan` job fails, download the `trivy-text` artifact first. It contains plain-text reports for all three images and is easier to read than SARIF when you need to identify the exact package and fixed version.
 
 ## Files Added For This Stage
 
