@@ -167,6 +167,18 @@ jobs:
           exit-code: "1"
           scanners: vuln
 
+      - name: Security scan API image text report
+        if: always()
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.API_IMAGE }}
+          format: table
+          output: trivy-api.txt
+          severity: CRITICAL
+          exit-code: "0"
+          scanners: vuln
+
       - name: Security scan worker image
         id: trivy_worker
         continue-on-error: true
@@ -177,6 +189,18 @@ jobs:
           output: trivy-worker.sarif
           severity: CRITICAL
           exit-code: "1"
+          scanners: vuln
+
+      - name: Security scan worker image text report
+        if: always()
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.WORKER_IMAGE }}
+          format: table
+          output: trivy-worker.txt
+          severity: CRITICAL
+          exit-code: "0"
           scanners: vuln
 
       - name: Security scan frontend image
@@ -191,6 +215,18 @@ jobs:
           exit-code: "1"
           scanners: vuln
 
+      - name: Security scan frontend image text report
+        if: always()
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}
+          format: table
+          output: trivy-frontend.txt
+          severity: CRITICAL
+          exit-code: "0"
+          scanners: vuln
+
       - name: Upload security scan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -200,6 +236,16 @@ jobs:
             trivy-api.sarif
             trivy-worker.sarif
             trivy-frontend.sarif
+
+      - name: Upload security scan text reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-text
+          path: |
+            trivy-api.txt
+            trivy-worker.txt
+            trivy-frontend.txt
 
       - name: Fail on critical findings
         if: steps.trivy_api.outcome != 'success' || steps.trivy_worker.outcome != 'success' || steps.trivy_frontend.outcome != 'success'

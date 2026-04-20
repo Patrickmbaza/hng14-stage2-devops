@@ -16,7 +16,9 @@ ENV NODE_ENV=production
 
 RUN apk upgrade --no-cache \
     && addgroup -S appgroup \
-    && adduser -S appuser -G appgroup
+    && adduser -S appuser -G appgroup \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+    && rm -rf /usr/local/lib/node_modules/npm
 
 WORKDIR /app
 

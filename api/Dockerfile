@@ -11,7 +11,10 @@ COPY api/requirements.txt ./requirements.txt
 
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install -r requirements.txt
+    && /opt/venv/bin/pip install -r requirements.txt \
+    && rm -f /opt/venv/bin/pip /opt/venv/bin/pip3 /opt/venv/bin/pip3.12 \
+    && rm -rf /opt/venv/lib/python3.12/site-packages/pip \
+              /opt/venv/lib/python3.12/site-packages/pip-*.dist-info
 
 FROM python:3.12-alpine
 
@@ -21,7 +24,10 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 RUN apk upgrade --no-cache \
     && addgroup -S appgroup \
-    && adduser -S appuser -G appgroup -h /home/appuser
+    && adduser -S appuser -G appgroup -h /home/appuser \
+    && rm -f /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12 \
+    && rm -rf /usr/local/lib/python3.12/site-packages/pip \
+              /usr/local/lib/python3.12/site-packages/pip-*.dist-info
 
 WORKDIR /app
 
