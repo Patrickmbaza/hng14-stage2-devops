@@ -1,0 +1,150 @@
+services:
+  redis:
+    image: ${REDIS_IMAGE}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      backend:
+        aliases:
+          - redis
+    cpus: "${REDIS_CPU_LIMIT}"
+    mem_limit: "${REDIS_MEMORY_LIMIT}"
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPU_LIMIT}"
+          memory: ${REDIS_MEMORY_LIMIT}
+
+  api:
+    image: ${API_IMAGE}
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB: ${REDIS_DB}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JOB_QUEUE_NAME: ${JOB_QUEUE_NAME}
+      JOB_STATUS_PREFIX: ${JOB_STATUS_PREFIX}
+      API_HOST: ${API_HOST}
+      API_PORT: ${API_PORT}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,sys,urllib.request; port=os.getenv('API_PORT','8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3); sys.exit(0)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      backend:
+        aliases:
+          - api
+    cpus: "${API_CPU_LIMIT}"
+    mem_limit: "${API_MEMORY_LIMIT}"
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPU_LIMIT}"
+          memory: ${API_MEMORY_LIMIT}
+
+  worker:
+    image: ${WORKER_IMAGE}
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    environment:
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB: ${REDIS_DB}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JOB_QUEUE_NAME: ${JOB_QUEUE_NAME}
+      JOB_STATUS_PREFIX: ${JOB_STATUS_PREFIX}
+      WORKER_POLL_TIMEOUT: ${WORKER_POLL_TIMEOUT}
+      WORKER_JOB_DELAY_SECONDS: ${WORKER_JOB_DELAY_SECONDS}
+      WORKER_HEARTBEAT_FILE: ${WORKER_HEARTBEAT_FILE}
+      WORKER_HEARTBEAT_TTL_SECONDS: ${WORKER_HEARTBEAT_TTL_SECONDS}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,sys,time; path=os.getenv('WORKER_HEARTBEAT_FILE','/tmp/worker-heartbeat'); ttl=int(os.getenv('WORKER_HEARTBEAT_TTL_SECONDS','30')); sys.exit(0 if os.path.exists(path) and time.time()-os.path.getmtime(path) <= ttl else 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks:
+      backend:
+        aliases:
+          - worker
+    cpus: "${WORKER_CPU_LIMIT}"
+    mem_limit: "${WORKER_MEMORY_LIMIT}"
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPU_LIMIT}"
+          memory: ${WORKER_MEMORY_LIMIT}
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      API_BASE_URL: ${API_BASE_URL}
+      FRONTEND_HOST: ${FRONTEND_HOST}
+      FRONTEND_PORT: ${FRONTEND_PORT}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http=require('http');const port=process.env.FRONTEND_PORT||3000;const req=http.get({host:'127.0.0.1',port,path:'/health',timeout:3000},res=>process.exit(res.statusCode===200?0:1));req.on('error',()=>process.exit(1));req.on('timeout',()=>{req.destroy();process.exit(1);});",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      backend:
+        aliases:
+          - frontend
+    cpus: "${FRONTEND_CPU_LIMIT}"
+    mem_limit: "${FRONTEND_MEMORY_LIMIT}"
+    deploy:
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPU_LIMIT}"
+          memory: ${FRONTEND_MEMORY_LIMIT}
+
+networks:
+  backend:
+    name: ${COMPOSE_NETWORK_NAME}
+    internal: true

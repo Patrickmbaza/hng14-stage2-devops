@@ -1,0 +1,246 @@
+name: ci-cd
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+env:
+  REDIS_IMAGE: redis:7-alpine
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_PASSWORD: changeme
+  JOB_QUEUE_NAME: jobs:queue
+  JOB_STATUS_PREFIX: job
+  API_HOST: 0.0.0.0
+  API_PORT: "8000"
+  API_BASE_URL: http://api:8000
+  FRONTEND_HOST: 0.0.0.0
+  FRONTEND_PORT: "3000"
+  WORKER_POLL_TIMEOUT: "5"
+  WORKER_JOB_DELAY_SECONDS: "2"
+  WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
+  WORKER_HEARTBEAT_TTL_SECONDS: "30"
+  COMPOSE_NETWORK_NAME: hng-stage2-network
+  REDIS_CPU_LIMIT: "0.50"
+  REDIS_MEMORY_LIMIT: 256m
+  API_CPU_LIMIT: "0.50"
+  API_MEMORY_LIMIT: 256m
+  WORKER_CPU_LIMIT: "0.50"
+  WORKER_MEMORY_LIMIT: 256m
+  FRONTEND_CPU_LIMIT: "0.50"
+  FRONTEND_MEMORY_LIMIT: 256m
+  IMAGE_REGISTRY: localhost:5000
+  API_IMAGE: localhost:5000/hng-stage2-api:${{ github.sha }}
+  WORKER_IMAGE: localhost:5000/hng-stage2-worker:${{ github.sha }}
+  FRONTEND_IMAGE: localhost:5000/hng-stage2-frontend:${{ github.sha }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint Python
+        run: flake8 api worker tests
+
+      - name: Lint JavaScript
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Lint Dockerfiles
+        run: |
+          docker run --rm -i hadolint/hadolint < api/Dockerfile
+          docker run --rm -i hadolint/hadolint < worker/Dockerfile
+          docker run --rm -i hadolint/hadolint < frontend/Dockerfile
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.txt pytest pytest-cov
+
+      - name: Run API unit tests
+        run: pytest --cov=api --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and push images
+        run: |
+          docker build -f api/Dockerfile -t "${API_IMAGE}" -t "${IMAGE_REGISTRY}/hng-stage2-api:latest" .
+          docker build -f worker/Dockerfile -t "${WORKER_IMAGE}" -t "${IMAGE_REGISTRY}/hng-stage2-worker:latest" .
+          docker build -f frontend/Dockerfile -t "${FRONTEND_IMAGE}" -t "${IMAGE_REGISTRY}/hng-stage2-frontend:latest" .
+          docker push "${API_IMAGE}"
+          docker push "${IMAGE_REGISTRY}/hng-stage2-api:latest"
+          docker push "${WORKER_IMAGE}"
+          docker push "${IMAGE_REGISTRY}/hng-stage2-worker:latest"
+          docker push "${FRONTEND_IMAGE}"
+          docker push "${IMAGE_REGISTRY}/hng-stage2-frontend:latest"
+          docker save "${API_IMAGE}" "${IMAGE_REGISTRY}/hng-stage2-api:latest" -o api-images.tar
+          docker save "${WORKER_IMAGE}" "${IMAGE_REGISTRY}/hng-stage2-worker:latest" -o worker-images.tar
+          docker save "${FRONTEND_IMAGE}" "${IMAGE_REGISTRY}/hng-stage2-frontend:latest" -o frontend-images.tar
+
+      - name: Upload built image archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-images
+          path: |
+            api-images.tar
+            worker-images.tar
+            frontend-images.tar
+
+  security_scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download built image archives
+        uses: actions/download-artifact@v4
+        with:
+          name: built-images
+
+      - name: Load built images
+        run: |
+          docker load -i api-images.tar
+          docker load -i worker-images.tar
+          docker load -i frontend-images.tar
+
+      - name: Security scan API image
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.API_IMAGE }}
+          format: sarif
+          output: trivy-api.sarif
+          severity: CRITICAL
+          exit-code: "1"
+
+      - name: Security scan worker image
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.WORKER_IMAGE }}
+          format: sarif
+          output: trivy-worker.sarif
+          severity: CRITICAL
+          exit-code: "1"
+
+      - name: Security scan frontend image
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL
+          exit-code: "1"
+
+      - name: Upload security scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif
+          path: |
+            trivy-api.sarif
+            trivy-worker.sarif
+            trivy-frontend.sarif
+
+  integration_test:
+    runs-on: ubuntu-latest
+    needs: security_scan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download built image archives
+        uses: actions/download-artifact@v4
+        with:
+          name: built-images
+
+      - name: Load built images
+        run: |
+          docker load -i api-images.tar
+          docker load -i worker-images.tar
+          docker load -i frontend-images.tar
+
+      - name: Prepare integration environment
+        run: cp .env.example .env
+
+      - name: Run integration test
+        run: bash scripts/integration-test.sh
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: integration_test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download built image archives
+        uses: actions/download-artifact@v4
+        with:
+          name: built-images
+
+      - name: Load built images
+        run: |
+          docker load -i api-images.tar
+          docker load -i worker-images.tar
+          docker load -i frontend-images.tar
+
+      - name: Prepare deploy environment
+        run: cp .env.example .env
+
+      - name: Run scripted rolling deploy
+        run: |
+          set -a
+          source .env
+          set +a
+          bash scripts/deploy.sh

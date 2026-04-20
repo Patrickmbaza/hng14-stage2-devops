@@ -1,0 +1,11 @@
+.git
+.github
+.pytest_cache
+.python-packages
+coverage.xml
+node_modules
+frontend/node_modules
+__pycache__
+*.pyc
+*.env
+.env
