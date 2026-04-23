@@ -195,4 +195,4 @@ If the `security_scan` job fails, download the `trivy-text` artifact first. It c
 - `.github/workflows/ci-cd.yml`
 - `tests/test_api.py`
 - `FIXES.md`
-- `.env.example`,
+- `.env.example`
